@@ -1,9 +1,5 @@
 """
 XAI script for 3-class classification (Normal / Monolateral / Bilateral).
-
-Reimplements the logic of:
-    "XAI con pesi Tre classi.ipynb"
-
 Main steps:
 - Load Agati features table and split into train/val/test (stratified by Class)
 - Build a CustomDataset that returns:
