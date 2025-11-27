@@ -22,13 +22,3 @@ from .ablation_utils import (
     my_train,
     shapley_value,
 )
-
-__all__ = [
-    "ablation_2class",
-    "ablation_3class",
-    "he_init",
-    "reinit_weights",
-    "select_additional_indices",
-    "my_train",
-    "shapley_value",
-]
