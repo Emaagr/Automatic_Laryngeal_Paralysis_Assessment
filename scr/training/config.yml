@@ -1,23 +1,110 @@
 # src/training/config.yml
+# Configuration for CNN+MLP training and hyperparameter optimisation
 
-# Data paths
-data:
-  train_data_dir: "/path/to/train_data"
-  val_data_dir: "/path/to/val_data"
-  test_data_dir: "/path/to/test_data"
-
-# Hyperparameters
-training:
-  batch_size: 16
-  learning_rate: 0.001
-  epochs: 100
+project:
   seed: 42
+  use_cuda_if_available: true
 
-# Model-specific configurations
+paths:
+  # Feature tables
+  features:
+    main: "/path/to/Agati_features.xlsx"
+    secondary: "/path/to/Agati_features_external.xlsx"
+
+  # Image directory
+  difference_images: "/path/to/Difference Images"
+
+  # Output directories
+  weights_dir: "/path/to/weights"
+  logs_dir: "/path/to/logs"
+  figures_dir: "/path/to/figures"
+
+data:
+  columns:
+    name: "Name"
+    class: "Class"
+    path: "Path"
+
+  split:
+    test_size: 0.2
+    val_size: 0.2
+    stratify: true
+    subject_level: true
+
+  image:
+    resize: [250, 250]
+    grayscale_channels: 3
+    normalize:
+      mean: [0.456, 0.456, 0.456]
+      std:  [0.225, 0.225, 0.225]
+
+training:
+  strategy: "cross_validation"   # options: ["single_split", "cross_validation"]
+
+  base:
+    max_epochs: 1000
+    early_stopping:
+      enabled: true
+      patience: 20
+      min_epoch: 50
+
+  optimizer:
+    type: "adam"
+    betas: [0.9, 0.999]
+    weight_decay: 0.0
+
+  loss:
+    binary:
+      type: "BCEWithLogitsLoss"
+      class_weighting: "pos_weight"   # computed dynamically
+    multiclass:
+      type: "CrossEntropyLoss"
+      class_weighting: "balanced"
+
+  cross_validation:
+    inner_folds: 5
+    shuffle: true
+    random_state: 42
+    max_combinations: 50
+
+  hyperparameters:
+    batch_size: [4, 8, 16]
+    learning_rate: [0.01, 0.001]
+
+    cnn:
+      output_dim: [1, "num_additional_features"]
+
+    mlp:
+      layers:
+        - [8, 1]
+        - [32, 1]
+        - [32, 8, 1]
+        - [8, 32, 1]
+
 model:
-  cnn_out_dim: 8
-  mlp_layers: [8, 3]
+  architecture: "cnn_mlp"
 
-# Logging
+  cnn:
+    backbone: "resnet18"
+    pretrained: true
+    freeze_backbone: false
+
+  mlp:
+    activation: "ReLU"
+    dropout: 0.0   # can be extended later
+
+evaluation:
+  metrics:
+    - "balanced_accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "roc_auc"
+
+  thresholding:
+    binary_logit_threshold: 0.0   # logit > 0 => class 1
+
 logging:
   log_level: "INFO"
+  save_best_model: true
+  verbose_training: true
