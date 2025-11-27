@@ -1,16 +1,20 @@
-# src/feature_extraction/config.yml
+# Configuration for feature extraction from video-laryngoscopy data
 
-# Config for feature extraction
+project:
+  seed: 42
 
-data:
+paths:
   videos_dir: "/path/to/videos"
   angles_dir: "/path/to/angles_csvs"
   output_dir: "/path/to/output"
-  images_subdir: "images"  # Folder for images
 
-parameters:
-  threshold: 30.0
-  contamination: 0.05
+  # Subdirectory (relative to output_dir) where extracted images are stored
+  images_subdir: "images"
+
+feature_extraction:
+  threshold: 30.0          # example threshold for outlier / event detection
+  contamination: 0.05      # fraction for outlier detection / robust stats
 
 logging:
-  log_level: "INFO"  # log level (DEBUG, INFO, WARNING, ERROR)
+  log_level: "INFO"        # options: DEBUG, INFO, WARNING, ERROR
+
