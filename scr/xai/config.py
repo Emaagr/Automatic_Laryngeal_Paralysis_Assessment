@@ -6,7 +6,6 @@ Adjust the paths to your local / cluster environment.
 
 from pathlib import Path
 
-# Base directory for the Spain Trials dataset
 # TODO: change this to your actual base path
 DATA_DIR = Path(
     "/content/drive/MyDrive/AI in healthcare/Laryngeal paralysis/Spain Dataset/Trials"
