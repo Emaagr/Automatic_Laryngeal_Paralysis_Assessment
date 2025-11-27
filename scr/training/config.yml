@@ -1,0 +1,23 @@
+# src/training/config.yml
+
+# Data paths
+data:
+  train_data_dir: "/path/to/train_data"
+  val_data_dir: "/path/to/val_data"
+  test_data_dir: "/path/to/test_data"
+
+# Hyperparameters
+training:
+  batch_size: 16
+  learning_rate: 0.001
+  epochs: 100
+  seed: 42
+
+# Model-specific configurations
+model:
+  cnn_out_dim: 8
+  mlp_layers: [8, 3]
+
+# Logging
+logging:
+  log_level: "INFO"
