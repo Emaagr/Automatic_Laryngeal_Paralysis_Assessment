@@ -1,0 +1,16 @@
+# src/feature_extraction/config.yml
+
+# Configurazione per l'estrazione delle caratteristiche
+
+data:
+  videos_dir: "/path/to/videos"
+  angles_dir: "/path/to/angles_csvs"
+  output_dir: "/path/to/output"
+  images_subdir: "images"  # Sottocartella per le immagini (opzionale)
+
+parameters:
+  threshold: 30.0
+  contamination: 0.05
+
+logging:
+  log_level: "INFO"  # Livello di log (DEBUG, INFO, WARNING, ERROR)
