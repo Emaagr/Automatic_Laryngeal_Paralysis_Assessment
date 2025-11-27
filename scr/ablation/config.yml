@@ -1,7 +1,75 @@
-# src/ablation/config.yml
+# Configuration for ablation studies (binary and multiclass)
 
-data_path: "/path/to/data"
-batch_size: 16
-learning_rate: 0.001
-seed: 42
-num_classes: 2  # for binary classification
+project:
+  seed: 42
+  use_cuda_if_available: true
+
+paths:
+  # Base data and features
+  data_root: "/path/to/data_root"
+  features:
+    main: "/path/to/Agati_features.xlsx"
+
+  # Image directory (if needed by ablation pipelines)
+  difference_images: "/path/to/Difference Images"
+
+  # Outputs
+  results_dir: "/path/to/ablation_results"
+  shapley_figures_dir: "/path/to/shapley_figures"
+
+data:
+  num_classes: 2  # default: binary classification; can be overridden per script
+  columns:
+    name: "Name"
+    class: "Class"
+    path: "Path"
+
+  split:
+    test_size: 0.2
+    stratify: true
+    subject_level: true
+
+  image:
+    resize: [250, 250]
+    grayscale_channels: 3
+    normalize:
+      mean: [0.456, 0.456, 0.456]
+      std:  [0.225, 0.225, 0.225]
+
+training:
+  batch_size: 16
+  learning_rate: 0.001
+
+  base:
+    max_epochs: 1000
+    early_stopping:
+      enabled: true
+      patience: 20
+      min_epoch: 50
+
+  loss:
+    binary:
+      type: "BCEWithLogitsLoss"
+      class_weighting: "pos_weight"   # computed dynamically
+
+  cross_validation:
+    inner_folds: 5
+    shuffle: true
+    random_state: 42
+
+hyperparameters:
+  batch_size: [4, 8, 16]
+  learning_rate: [0.01, 0.001, 0.0001]
+
+model:
+  architecture: "cnn_mlp_or_mlp"  # depending on coalition
+  cnn:
+    backbone: "resnet18"
+    pretrained: true
+    freeze_backbone: false
+
+logging:
+  log_level: "INFO"
+  save_best_model: true
+  verbose_training: true
+
