@@ -1,0 +1,27 @@
+# Configuration for XAI (Integrated Gradients) analyses
+
+project:
+  seed: 42
+
+paths:
+  data_dir: "/path/to/Spain_Dataset/Trials"
+  features_xlsx: "/path/to/Spain_Dataset/Trials/Agati features.xlsx"
+
+  weights:
+    binary: "/path/to/weights/combined_model_weights_due_classi.pth"
+    multiclass: "/path/to/weights/best_model_three.pth"
+
+  attributions:
+    binary: "/path/to/weights/attributions_bin.npy"
+    multiclass: "/path/to/weights/attributions.npy"
+
+xai:
+  method: "IntegratedGradients"
+  steps: 100
+  internal_batch_size: 1
+  baseline:
+    type: "zeros"   # options: ["zeros"]
+    image_like: true
+
+logging:
+  log_level: "INFO"
