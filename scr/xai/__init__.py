@@ -1,10 +1,11 @@
 # src/xai/__init__.py
 """
-XAI (explainability) module for the laryngeal paralysis project.
+Explainable AI (XAI) module for the Automatic Laryngeal Paralysis Assessment project.
 
 This package provides:
-- 2-class XAI pipeline (Normal vs Paralyzed)
-- 3-class XAI pipeline (Normal / Monolateral / Bilateral)
+- 2-class XAI pipeline (Normal vs Paralyzed).
+- 3-class XAI pipeline (Normal / Monolateral / Bilateral).
+- Dataset classes tailored for integrated gradients over images and additional features.
 """
 
 from .xai_utils import XAIDatasetBinary, XAIDatasetMulticlass
