@@ -67,19 +67,25 @@ training:
     random_state: 42
     max_combinations: 50
 
-  hyperparameters:
+hyperparameters:
     batch_size: [4, 8, 16]
     learning_rate: [0.01, 0.001]
 
     cnn:
-      output_dim: [1, "num_additional_features"]
+      output_dim_binary: [1, "num_additional_features"]
+      output_dim_multiclass:  [1, "num_additional_features"]
 
     mlp:
-      layers:
+      binary_layers:
         - [8, 1]
         - [32, 1]
         - [32, 8, 1]
         - [8, 32, 1]
+      multiclass_layers:
+        - [8, 3]
+        - [32, 3]
+        - [32, 8, 3]
+        - [8, 32, 3]
 
 model:
   architecture: "cnn_mlp"
