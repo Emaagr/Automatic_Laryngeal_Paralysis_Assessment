@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from .utils import CustomDataset, DeviceDataLoader
-from .utils import CombinedModel, MLPModule, ModifiedResNet18
+from .training_utils import CustomDataset, DeviceDataLoader
+from .training_utils import CombinedModel, MLPModule, ModifiedResNet18
 from .config import BATCH_SIZE, LEARNING_RATE, EPOCHS, SEED, LOG_LEVEL
 
 def my_train_3class(model, optimizer, loss_fn, train_loader, val_loader, epochs=30, to_print=True):
