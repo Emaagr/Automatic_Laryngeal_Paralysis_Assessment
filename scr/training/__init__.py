@@ -1,4 +1,3 @@
-# src/training/__init__.py
 """
 Training module for the Automatic Laryngeal Paralysis Assessment project.
 
@@ -33,4 +32,3 @@ __all__ = [
     "MLPModule",
     "ModifiedResNet18",
 ]
-
