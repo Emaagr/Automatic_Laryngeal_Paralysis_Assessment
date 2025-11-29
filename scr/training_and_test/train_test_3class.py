@@ -9,7 +9,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from .training_test_utils.py import (
+from .training_test_utils import (
     CustomDataset,
     DeviceDataLoader,
     CombinedModel,
