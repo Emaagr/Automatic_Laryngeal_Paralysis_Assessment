@@ -36,7 +36,7 @@ from .xai_utils import (
     XAIDatasetMulticlass,
     build_multiclass_model,
 )
-from ..training.training_utils import (
+from ..training.training_test_utils import (
     device,
     set_global_seed,
 )
@@ -232,3 +232,4 @@ def run_xai_3class():
 
 if __name__ == "__main__":
     run_xai_3class()
+

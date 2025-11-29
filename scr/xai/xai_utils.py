@@ -6,14 +6,13 @@ Utility components for XAI:
 """
 
 from typing import Sequence, Tuple
-
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
 
-from ..training.training_utils import (
+from ..training.training_test_utils import (
     device,
     composer,          # image transforms (Resize+Gray+Normalize)
     set_global_seed,
@@ -26,12 +25,10 @@ from ..training.training_utils import (
 class XAIDatasetBinary(Dataset):
     """
     Dataset for 2-class XAI (Normal vs Paralyzed).
-
     Expects:
     - `subjects`: list of trial names (values from 'Name' column)
     - `features_dataframe`: DataFrame containing at least 'Name', 'Path', 'Class',
       and additional features between 'Name' and 'Class'.
-
     Returns a dict with:
         - 'image': transformed image tensor (for model input)
         - 'additional_features': handcrafted features (float32 tensor)
@@ -53,14 +50,14 @@ class XAIDatasetBinary(Dataset):
         name = self.subjects[idx]
         row = self.features_dataframe.loc[self.features_dataframe["Name"] == name].iloc[0]
 
-        # Image
+        # Image loading and transformation
         image_path = row["Path"]
         image = Image.open(image_path)
 
         resized = self.resize(image)
         original_tensor = self.to_tensor(resized)
 
-        # Additional features between 'Name' and 'Class'
+        # Additional features (excluding 'Name' and 'Class')
         cols = list(self.features_dataframe.columns)
         name_idx = cols.index("Name")
         class_idx = cols.index("Class")
@@ -72,13 +69,13 @@ class XAIDatasetBinary(Dataset):
         label_bin = 1 if label_int > 0 else 0
         label_tensor = torch.tensor(label_bin, dtype=torch.float32)
 
-        # Model transform
+        # Apply model transformation (resize + normalize)
         image_t = self.transform(image)
 
         return {
-            "image": image_t,
-            "additional_features": additional_features,
-            "labels": label_tensor,
+            "image": image_t.to(device),
+            "additional_features": additional_features.to(device),
+            "labels": label_tensor.to(device),
             "original": original_tensor,
         }
 
@@ -86,7 +83,6 @@ class XAIDatasetBinary(Dataset):
 class XAIDatasetMulticlass(Dataset):
     """
     Dataset for 3-class XAI (Normal / Monolateral / Bilateral).
-
     Returns a dict with:
         - 'image': transformed image tensor (for model input)
         - 'additional_features': handcrafted features (float32 tensor)
@@ -108,30 +104,31 @@ class XAIDatasetMulticlass(Dataset):
         name = self.subjects[idx]
         row = self.features_dataframe.loc[self.features_dataframe["Name"] == name].iloc[0]
 
-        # Image
+        # Image loading and transformation
         image_path = row["Path"]
         image = Image.open(image_path)
 
         resized = self.resize(image)
         original_tensor = self.to_tensor(resized)
 
-        # Additional features between 'Name' and 'Class'
+        # Additional features (excluding 'Name' and 'Class')
         cols = list(self.features_dataframe.columns)
         name_idx = cols.index("Name")
         class_idx = cols.index("Class")
         feat_vals = row.iloc[name_idx + 1:class_idx].values.astype("float32")
         additional_features = torch.tensor(feat_vals, dtype=torch.float32)
 
-        # Label as integer (0,1,2)
+        # Multiclass label as integer (0, 1, 2)
         label = int(row["Class"])
         label_tensor = torch.tensor(label, dtype=torch.int64)
 
+        # Apply model transformation (resize + normalize)
         image_t = self.transform(image)
 
         return {
-            "image": image_t,
-            "additional_features": additional_features,
-            "labels": label_tensor,
+            "image": image_t.to(device),
+            "additional_features": additional_features.to(device),
+            "labels": label_tensor.to(device),
             "original": original_tensor,
         }
 
@@ -145,7 +142,7 @@ def build_binary_model(n_additional: int,
     """
     cnn = ModifiedResNet18(num_classes=cnn_out_dim)
     mlp_num_layers = 2
-    mlp_num_neurons: Sequence[int] = [8, 1]
+    mlp_num_neurons: Sequence[int] = [8, 1]  # Binary classification: 1 logit output
 
     mlp = MLPModule(
         input_size=cnn_out_dim + n_additional,
@@ -167,7 +164,7 @@ def build_multiclass_model(n_additional: int,
     """
     cnn = ModifiedResNet18(num_classes=cnn_out_dim)
     mlp_num_layers = 2
-    mlp_num_neurons: Sequence[int] = [8, n_classes]
+    mlp_num_neurons: Sequence[int] = [8, n_classes]  # 3 class output
 
     mlp = MLPModule(
         input_size=cnn_out_dim + n_additional,
@@ -177,3 +174,4 @@ def build_multiclass_model(n_additional: int,
 
     model = CombinedModel(cnn, mlp).to(device)
     return model
+
