@@ -156,7 +156,7 @@ def train_and_evaluate(subjects_train, features_train, subjects_test, features_t
         optimizer,
         loss_fn,
         train_loader,
-        test_loader,  # come validation
+        test_loader,  
         epochs=EPOCHS,
         to_print=True,
         device=device

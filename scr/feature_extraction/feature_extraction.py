@@ -34,13 +34,11 @@ def ggm(time_series: np.ndarray, contamination: float) -> np.ndarray:
     ts = np.asarray(time_series).reshape(-1)
     ts_nonan = ts[~np.isnan(ts)]
 
-    # Gestione casi degeneri
     if ts_nonan.size < 2:
         return np.array([np.nan, np.nan])
 
     ts_nonan = ts_nonan.reshape(-1, 1)
 
-    # Per serie molto corte evito l'outlier detection, che può rompersi
     if ts_nonan.shape[0] < 10:
         data_in = ts_nonan
     else:
@@ -59,7 +57,6 @@ def ggm(time_series: np.ndarray, contamination: float) -> np.ndarray:
     gmm = GaussianMixture(n_components=2, random_state=42)
     gmm.fit(data_in)
 
-    # Ritorno un vettore 1D (2,)
     means = gmm.means_.reshape(-1)
     return means
 

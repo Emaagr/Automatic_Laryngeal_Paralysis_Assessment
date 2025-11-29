@@ -168,7 +168,6 @@ def train_and_evaluate(subjects_train, features_train,
     # model.load_state_dict(torch.load('best_model.pth', map_location=device))
     # model.to(device)
 
-    # -------------------- VALUTAZIONE --------------------
     class_names = ['Class_0', 'Class_1', 'Class_2']  # oppure ['Healthy','Unilateral','Bilateral']
 
     all_labels, all_preds, all_probs, all_features = get_trials_prediction(

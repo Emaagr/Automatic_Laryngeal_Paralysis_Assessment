@@ -89,9 +89,7 @@ class DeviceDataLoader:
         return len(self.dl)
 
 
-# ----------------------------------------------------------------------
-# Modelli: CNN, MLP, Combined
-# ----------------------------------------------------------------------
+
 class ModifiedResNet18(nn.Module):
 
     def __init__(self, num_classes: int = 1000, pretrained: bool = True):
@@ -145,7 +143,7 @@ class CombinedModel(nn.Module):
 
 composer = transforms.Compose([
     transforms.Resize((250, 250)),
-    transforms.Grayscale(num_output_channels=3),  # converte 1 canale -> 3 canali per ResNet
+    transforms.Grayscale(num_output_channels=3),  
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.456, 0.456, 0.456],
                          std=[0.225, 0.225, 0.225])
@@ -153,10 +151,7 @@ composer = transforms.Compose([
 
 
 def he_init_weight(tensor: torch.Tensor) -> None:
-    """
-    Inizializzazione He (Kaiming) per pesi di layer fully connected.
-    Modifica il tensore in-place.
-    """
+  
     if tensor.ndimension() < 2:
         raise ValueError("he_init_weight expects a weight tensor with at least 2 dimensions")
     fan_in = tensor.size(1)  # per Linear: (out_features, in_features)
