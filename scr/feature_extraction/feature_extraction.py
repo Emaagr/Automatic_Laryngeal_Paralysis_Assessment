@@ -116,7 +116,6 @@ def feature_extract(
     ra = np.array(data['Angle of Left Cord'])
     idx = ~np.isnan(ra) & ~np.isnan(la)
 
-    # Correlazione angoli
     if np.sum(idx) > 1:
         corr, _ = kendalltau(la[idx], ra[idx])
     else:
@@ -141,7 +140,6 @@ def feature_extract(
     except Exception:
         grang = np.nan
 
-    # Varianze angoli
     if np.sum(idx) > 1:
         std_la = np.std(la[idx])
         std_ra = np.std(ra[idx])
@@ -151,7 +149,6 @@ def feature_extract(
         min_std = np.nan
         diff_std = np.nan
 
-    # --- Velocità ---
     vel_la = la[idx][1:] - la[idx][:-1]
     vel_ra = ra[idx][1:] - ra[idx][:-1]
 
@@ -185,7 +182,6 @@ def feature_extract(
         vel_min_std = np.nan
         vel_diff_std = np.nan
 
-    # --- Bimodalità Anterior Glottic Angle ---
     means = ggm(data['Anterior Glottic Angle'], contamination=0.05)
     if np.all(np.isnan(means)):
         means_diff = np.nan

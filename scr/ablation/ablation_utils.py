@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 
 def he_init(shape):
     """He initialization."""
-    # Usando nn.init per una gestione migliore degli inizializzatori
     return nn.init.kaiming_normal_(torch.empty(*shape), mode='fan_in', nonlinearity='relu')
 
 def reinit_weights(model, seed, device):
@@ -34,7 +33,6 @@ def reinit_weights(model, seed, device):
     except Exception as e:
         print(f"Error reinitializing CNN layer: {e}")
 
-    # Reinizializza l'MLP
     for param in model.mlp.parameters():
         nn.init.kaiming_normal_(param, mode='fan_in', nonlinearity='relu')
 
@@ -89,11 +87,11 @@ def my_train(
             labels = batch["labels"].float()
 
             if ind_comb == 0:
-                outputs = model(images)  # solo immagine
+                outputs = model(images)  
             elif 0 < ind_comb < 7:
-                outputs = model(images, additional_features)  # immagine + feature
+                outputs = model(images, additional_features)  
             elif ind_comb >= 7:
-                outputs = model(additional_features)  # solo feature
+                outputs = model(additional_features) 
 
             outputs = outputs.view(-1)
             loss = loss_fn(torch.reshape(outputs, (-1, 1)), torch.reshape(labels, (-1, 1)))

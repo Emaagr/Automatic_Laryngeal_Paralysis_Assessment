@@ -40,7 +40,7 @@ Adamian et al. (2021). *An Open-Source Computer Vision Tool for Automated Vocal 
 
 This repository provides all scripts necessary to reproduce:
 - feature extraction,
-- training of 2-class and 3-class classifiers,
+- training and test of 2-class and 3-class classifiers,
 - cross-validated hyperparameter tuning,
 - ablation analysis,
 - explainable AI analyses using Integrated Gradients.

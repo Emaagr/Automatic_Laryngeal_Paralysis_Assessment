@@ -24,17 +24,11 @@ from .config import BATCH_SIZE, LEARNING_RATE, EPOCHS, SEED
 
 def my_train(model, optimizer, loss_fn, train_loader, val_loader,
              epochs: int = 30, to_print: bool = True, device=None):
-    """
-    Training loop per modello multiclasse (3 classi) con CrossEntropyLoss.
 
-    - output del modello: (B, 3)
-    - labels: LongTensor (B,) con valori {0,1,2}
-    """
     min_val_loss = float('inf')
     epochs_no_improve = 0
     history = []
 
-    # Provo a caricare uno stato iniziale; se non esiste, reinizializzo i pesi
     try:
         state_dict = torch.load('init_model.pth', map_location=device)
         model.load_state_dict(state_dict)
@@ -49,9 +43,9 @@ def my_train(model, optimizer, loss_fn, train_loader, val_loader,
 
         # -------------------- TRAIN --------------------
         for batch in train_loader:
-            images = batch['image']                  # già su device (DeviceDataLoader)
+            images = batch['image']                  
             additional_features = batch['additional_features']
-            labels = batch['labels']                 # LongTensor (B,)
+            labels = batch['labels']                
 
             optimizer.zero_grad()
             outputs = model(images, additional_features)   # (B,3)
@@ -121,9 +115,7 @@ def my_train(model, optimizer, loss_fn, train_loader, val_loader,
 
 def train_and_evaluate(subjects_train, features_train,
                        subjects_test, features_test, device):
-    """
-    Training + valutazione per modello a 3 classi (CrossEntropy).
-    """
+ 
     # -------------------- DATASET & DATALOADERS --------------------
     train_ds = CustomDataset(
         subjects=subjects_train,
@@ -144,14 +136,10 @@ def train_and_evaluate(subjects_train, features_train,
 
     num_additional_features = len(train_ds.feature_cols)
 
-    # -------------------- MODELLO --------------------
-    # Dimensione delle feature estratte dalla CNN
-    cnn_feature_dim = 32  # puoi modificarlo (16/32/64) purché coerente con l'MLP
+      cnn_feature_dim = 32  
 
-    # CNN come estrattore di feature
     cnn = ModifiedResNet18(num_classes=cnn_feature_dim, pretrained=True)
 
-    # MLP: input = feature_CNN + feature_tabellari, output = 3 logit
     mlp_input_size = cnn_feature_dim + num_additional_features
     mlp = MLPModule(input_size=mlp_input_size,
                     num_layers=2,
@@ -169,16 +157,14 @@ def train_and_evaluate(subjects_train, features_train,
         optimizer,
         loss_fn,
         train_loader,
-        test_loader,   # come validation
+        test_loader,   
         epochs=EPOCHS,
         to_print=True,
         device=device
     )
 
-    # Salva il modello finale
     torch.save(model.state_dict(), 'best_3class_model.pth')
 
-    # Se vuoi usare il best (early stopping):
     # model.load_state_dict(torch.load('best_model.pth', map_location=device))
     # model.to(device)
 

@@ -51,7 +51,6 @@ def filter_outliers(data: pd.DataFrame, threshold: float) -> pd.DataFrame:
 
     n = len(aga)
     if n < 3:
-        # Troppo pochi punti per applicare la logica sui vicini
         data['Anterior Glottic Angle'] = aga
         data['Angle of Left Cord'] = la
         data['Angle of Right Cord'] = ra

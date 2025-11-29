@@ -23,15 +23,13 @@ import matplotlib.pyplot as plt
 
 
 def my_train(model, optimizer, loss_fn, train_loader, val_loader, epochs=30, to_print=True, device=None):
-    """
-    Training loop per modello binario con BCEWithLogitsLoss.
-    L'output del modello deve avere shape (B, 1), le label (B, 1) in float.
-    """
+    
+
+    
     min_val_loss = float('inf')
     epochs_no_improve = 0
     history = []
 
-    # Provo a caricare lo stato iniziale; se non esiste, reinizializzo i pesi
     try:
         state_dict = torch.load('init_model.pth', map_location=device)
         model.load_state_dict(state_dict)
@@ -46,12 +44,12 @@ def my_train(model, optimizer, loss_fn, train_loader, val_loader, epochs=30, to_
 
         # -------------------- TRAIN --------------------
         for batch in train_loader:
-            images = batch['image']                  # già su device (DeviceDataLoader)
+            images = batch['image']                  
             additional_features = batch['additional_features']
-            labels = batch['labels'].float().unsqueeze(1)  # (B,) -> (B,1), float per BCE
+            labels = batch['labels'].float().unsqueeze(1)  
 
             optimizer.zero_grad()
-            outputs = model(images, additional_features)   # (B,1)
+            outputs = model(images, additional_features)   
             loss = loss_fn(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -119,9 +117,7 @@ def my_train(model, optimizer, loss_fn, train_loader, val_loader, epochs=30, to_
 
 
 def train_and_evaluate(subjects_train, features_train, subjects_test, features_test, device):
-    """
-    Training + valutazione per modello binario con BCE.
-    """
+
     # -------------------- DATASET & DATALOADER --------------------
     train_ds = CustomDataset(
         subjects=subjects_train,
@@ -142,20 +138,15 @@ def train_and_evaluate(subjects_train, features_train, subjects_test, features_t
 
     num_additional_features = len(train_ds.feature_cols)
 
-    # -------------------- MODELLO --------------------
-    # CNN produce feature vettoriali di dimensione cnn_feature_dim
     cnn_feature_dim = 32  # scegli tu (16/32/64...) purché coerente con l'MLP
 
     cnn = ModifiedResNet18(num_classes=cnn_feature_dim, pretrained=True)
 
-    # MLP: input = feature_CNN + feature_tabellari, output = 1 logit (binario)
     mlp_input_size = cnn_feature_dim + num_additional_features
     mlp = MLPModule(input_size=mlp_input_size, num_layers=2, num_neurons=[64, 1])
 
     model = CombinedModel(cnn, mlp).to(device)
 
-    # -------------------- LOSS & OPTIMIZER --------------------
-    # BCEWithLogitsLoss (logit grezzo in input, NO sigmoid nel modello)
     loss_fn = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
@@ -171,18 +162,13 @@ def train_and_evaluate(subjects_train, features_train, subjects_test, features_t
         device=device
     )
 
-    # Salva il modello finale
     torch.save(model.state_dict(), 'best_2class_model.pth')
 
-    # Se vuoi usare il best (early stopping):
+    # use early stopping
     # model.load_state_dict(torch.load('best_model.pth', map_location=device))
     # model.to(device)
 
-    # -------------------- VALUTAZIONE --------------------
-    # Per usare get_trials_prediction con BCE (output 1D logit), devi
-    # avere una versione che faccia sigmoid invece di softmax.
-    # Se hai già aggiornato training_utils in questo senso, basta chiamare:
-    all_labels, all_preds, all_probs, all_features = get_trials_prediction(
+        all_labels, all_preds, all_probs, all_features = get_trials_prediction(
         model,
         test_loader,
         classes=['Negative', 'Positive'],  # o Healthy/Pathological ecc.
