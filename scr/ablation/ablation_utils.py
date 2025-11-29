@@ -1,4 +1,4 @@
-# src/ablation/utils.py
+# src/ablation/ablation_utils.py
 
 import torch
 import numpy as np
@@ -15,27 +15,30 @@ import matplotlib.pyplot as plt
 
 def he_init(shape):
     """He initialization."""
-    return np.random.randn(*shape) * np.sqrt(2 / shape[0])
+    # Usando nn.init per una gestione migliore degli inizializzatori
+    return nn.init.kaiming_normal_(torch.empty(*shape), mode='fan_in', nonlinearity='relu')
 
-def reinit_weights(model, seed):
+def reinit_weights(model, seed, device):
     """Reinitialize weights of the last CNN layer and MLP."""
     np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    # Reinizializza l'ultimo layer CNN
     try:
         layers = list(model.cnn.children())
-        last_n_layers = layers[-1:]
-        for layer in last_n_layers:
-            if isinstance(layer, torch.nn.Linear):
-                layer.weight.data = torch.FloatTensor(he_init(layer.weight.size()))
-    except Exception:
-        pass
+        last_layer = layers[-1]
+        if isinstance(last_layer, torch.nn.Linear):
+            nn.init.kaiming_normal_(last_layer.weight, mode='fan_in', nonlinearity='relu')
+            if last_layer.bias is not None:
+                nn.init.zeros_(last_layer.bias)
+    except Exception as e:
+        print(f"Error reinitializing CNN layer: {e}")
 
-    try:
-        for param in model.mlp.parameters():
-            param.data = torch.from_numpy(he_init(param.size()))
-    except Exception:
-        pass
+    # Reinizializza l'MLP
+    for param in model.mlp.parameters():
+        nn.init.kaiming_normal_(param, mode='fan_in', nonlinearity='relu')
 
-    model = model.float()
+    model = model.float().to(device)
     torch.save(model.state_dict(), "init_model.pth")
     return model
 
@@ -48,7 +51,6 @@ def select_additional_indices(combs):
         additional_ok.extend([2, 3, 5])
     if 4 in combs:
         additional_ok.extend([4, 6, 7])
-
     return np.array(additional_ok)
 
 def my_train(
@@ -61,6 +63,7 @@ def my_train(
     ordered_combinations,
     epochs=30,
     to_print=False,
+    device=None,
 ):
     """Training loop for ablation, handling different forward passes."""
     min_val_loss = float("inf")
@@ -69,8 +72,8 @@ def my_train(
 
     try:
         model.load_state_dict(torch.load("init_model.pth"))
-    except Exception:
-        model = reinit_weights(model, seed)
+    except:
+        model = reinit_weights(model, seed, device)
         model = model.to(device)
 
     add_ind_ok = select_additional_indices(ordered_combinations[ind_comb])
@@ -86,23 +89,21 @@ def my_train(
             labels = batch["labels"].float()
 
             if ind_comb == 0:
-                outputs = model(images)
+                outputs = model(images)  # solo immagine
             elif 0 < ind_comb < 7:
-                outputs = model(images, additional_features)
+                outputs = model(images, additional_features)  # immagine + feature
             elif ind_comb >= 7:
-                outputs = model(additional_features)
+                outputs = model(additional_features)  # solo feature
 
             outputs = outputs.view(-1)
-            loss = loss_fn(
-                torch.reshape(outputs, (-1, 1)),
-                torch.reshape(labels, (-1, 1)),
-            )
+            loss = loss_fn(torch.reshape(outputs, (-1, 1)), torch.reshape(labels, (-1, 1)))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             training_loss += loss.data.item() * images.size(0)
             total_train_samples += images.size(0)
-        training_loss /= total_train_samples
+
+        training_loss /= max(total_train_samples, 1)
 
         with torch.no_grad():
             model.eval()
@@ -122,16 +123,20 @@ def my_train(
                     outputs = model(additional_features)
 
                 outputs = outputs.view(-1)
-                loss = loss_fn(
-                    torch.reshape(outputs, (-1, 1)),
-                    torch.reshape(labels, (-1, 1)),
-                )
+                loss = loss_fn(torch.reshape(outputs, (-1, 1)), torch.reshape(labels, (-1, 1)))
                 valid_loss += loss.data.item() * images.size(0)
                 total_val_samples += images.size(0)
-                predicted = np.resize((outputs.cpu().numpy() > 0) * 1, labels.size(0))
+
+                # Predizioni (caso binario o multiclass)
+                if outputs.size(1) == 1:
+                    preds = (torch.sigmoid(outputs) > 0.5).long()  # binario
+                else:
+                    preds = outputs.argmax(dim=1)  # multiclass
+
+                correct += (preds == labels).sum().item()
                 total += labels.size(0)
-                correct += (predicted == labels.cpu().numpy()).sum().item()
-            valid_loss /= total_val_samples
+
+            valid_loss /= max(total_val_samples, 1)
             accy = correct / total
 
             if to_print:
@@ -184,3 +189,5 @@ def shapley_value(coalitions, values):
                 shapley_values[player] += weight * marginal_contribution
 
     return shapley_values
+
+
