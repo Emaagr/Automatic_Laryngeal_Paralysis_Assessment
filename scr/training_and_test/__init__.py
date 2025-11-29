@@ -8,14 +8,14 @@ This package contains:
 
 Submodules
 ----------
-- train_2class     : training script for binary classification (Normal vs Paralyzed).
-- train_3class     : training script for 3-class classification (Normal / Monolateral / Bilateral).
-- training_utils   : shared dataset, model, and device utilities.
+- train_test_2class     : training script for binary classification (Normal vs Paralyzed).
+- train_test_3class     : training script for 3-class classification (Normal / Monolateral / Bilateral).
+- training_test_utils   : shared dataset, model, and device utilities.
 """
 
-from .train_2class import my_train as my_train_2class
-from .train_3class import my_train_3class
-from .training_utils import (
+from .train_test_2class import my_train as my_train_test_2class
+from .train_test_3class import my_train_test_3class
+from .training_test_utils import (
     CustomDataset,
     DeviceDataLoader,
     CombinedModel,
@@ -24,8 +24,8 @@ from .training_utils import (
 )
 
 __all__ = [
-    "my_train_2class",
-    "my_train_3class",
+    "my_train_test_2class",
+    "my_train_test_3class",
     "CustomDataset",
     "DeviceDataLoader",
     "CombinedModel",
