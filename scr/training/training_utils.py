@@ -1,52 +1,88 @@
 # src/training/training_utils.py
 
+import os
+from typing import List, Sequence, Optional
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torchvision.models import resnet18
-from sklearn.preprocessing import LabelBinarizer
-import numpy as np
+
 from PIL import Image
-import os
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # Set up the device for training (cuda if available)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Dataset class for loading images and additional features
+
+# ----------------------------------------------------------------------
+# Dataset
+# ----------------------------------------------------------------------
 class CustomDataset(Dataset):
+    """
+    Dataset per immagini + feature aggiuntive.
+
+    Parameters
+    ----------
+    subjects : Sequence[str]
+        Lista dei nomi (valori della colonna 'Name') da usare.
+    features_dataframe : pd.DataFrame
+        DataFrame con almeno le colonne: 'Name', 'Class', 'Path' e le feature numeriche.
+    transform : callable, optional
+        Trasformazioni da applicare all'immagine (torchvision transforms).
+    """
     def __init__(self, subjects, features_dataframe, transform=None):
-        self.subjects = subjects
-        self.features_dataframe = features_dataframe
+        self.subjects: List[str] = list(subjects)
+        # indicizziamo il DF per Name per lookup O(1)
+        self.df = features_dataframe.set_index('Name')
         self.transform = transform
 
-    def __len__(self):
-        return len(self.features_dataframe)
+        # individua le colonne di feature (escludi Name, Class, Path)
+        self.feature_cols = [
+            c for c in self.df.columns
+            if c not in ['Class', 'Path']
+        ]
 
-    def __getitem__(self, idx):
+    def __len__(self) -> int:
+        return len(self.subjects)
+
+    def __getitem__(self, idx: int):
+        name = self.subjects[idx]
+        row = self.df.loc[name]
+
         # Load image
-        image_path = self.features_dataframe.loc[self.features_dataframe['Name'] == self.subjects[idx]]['Path'].values[0]
-        image = Image.open(image_path)
+        image_path = row['Path']
+        image = Image.open(image_path).convert('L')  # grayscale, poi Grayscale(3) nel transform
 
-        # Load additional features (excluding 'Name' and 'Class' columns)
+        # Additional features
         additional_features = torch.tensor(
-            self.features_dataframe.loc[self.features_dataframe['Name'] == self.subjects[idx]].iloc[:, 1:-2].values[0].astype('float32'),
+            row[self.feature_cols].values.astype('float32'),
             dtype=torch.float32
         )
 
-        # Labels for classification
-        labels = torch.tensor(self.features_dataframe.loc[self.features_dataframe['Name'] == self.subjects[idx]]['Class'].values[0], dtype=torch.int64)
+        # Label
+        label = torch.tensor(int(row['Class']), dtype=torch.int64)
 
-        # Apply transformations
+        # Transform image
         if self.transform:
             image = self.transform(image)
-        
-        return {'image': image, 'additional_features': additional_features, 'labels': labels}
 
-# Data loader for transferring data to the GPU
+        return {
+            'image': image,
+            'additional_features': additional_features,
+            'labels': label
+        }
+
+
+# ----------------------------------------------------------------------
+# DataLoader su device
+# ----------------------------------------------------------------------
 class DeviceDataLoader:
-    def __init__(self, dl, device):
+    """Wrapper per spostare automaticamente i batch su device (cuda/cpu)."""
+    def __init__(self, dl: DataLoader, device: torch.device):
         self.dl = dl
         self.device = device
 
@@ -57,119 +93,193 @@ class DeviceDataLoader:
     def __len__(self):
         return len(self.dl)
 
-# Pre-trained ResNet18 model modification for feature extraction and custom final layer
+
+# ----------------------------------------------------------------------
+# Modelli: CNN, MLP, Combined
+# ----------------------------------------------------------------------
 class ModifiedResNet18(nn.Module):
-    def __init__(self, num_classes=1000):
+    """
+    ResNet18 pre-addestrata (o meno) con ultimo layer fully connected sostituito.
+    L'output di questa rete viene usato come feature dal modello combinato.
+    """
+    def __init__(self, num_classes: int = 1000, pretrained: bool = True):
         super(ModifiedResNet18, self).__init__()
-        # Load pre-trained ResNet18
-        resnet = resnet18(pretrained=True)
-        
-        # Use all layers except the last fully connected layer
+        # Nota: per compatibilità con versioni più nuove di torchvision
+        # si potrebbe usare il parametro 'weights', ma qui manteniamo
+        # la firma classica.
+        resnet = resnet18(pretrained=pretrained)
+
+        # Usa tutte le layer eccetto l'ultimo FC
         self.features = nn.Sequential(*list(resnet.children())[:-1])
-        
-        # Custom final fully connected layer
+
+        # Nuovo fully connected finale
         self.new_fc_layer = nn.Linear(512, num_classes)
 
-    def forward(self, x):
-        # Forward pass through feature extractor (ResNet layers)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.features(x)
-        
-        # Flatten the output from 4D to 2D (batch_size, 512)
-        x = x.view(x.size(0), -1)
-        
-        # Pass through the new fully connected layer
-        x = self.new_fc_layer(x)
+        x = x.view(x.size(0), -1)   # (batch_size, 512)
+        x = self.new_fc_layer(x)    # (batch_size, num_classes) o feature_dim
         return x
 
-# MLP Module for additional features
+
 class MLPModule(nn.Module):
-    def __init__(self, input_size, num_layers, num_neurons):
+    """
+    MLP generico per le feature aggiuntive (o per feature combinate).
+    """
+    def __init__(self, input_size: int, num_layers: int, num_neurons: Sequence[int]):
         super(MLPModule, self).__init__()
         layers = []
+
+        # Primo layer
         layers.append(nn.Linear(input_size, num_neurons[0]))
         layers.append(nn.ReLU())
-        
+
+        # Layer successivi
         for i in range(1, num_layers):
             layers.append(nn.Linear(num_neurons[i - 1], num_neurons[i]))
             if i != num_layers - 1:
                 layers.append(nn.ReLU())
-        
+
         self.mlp = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.mlp(x)
 
-# Combined model that uses both CNN and MLP modules
+
 class CombinedModel(nn.Module):
-    def __init__(self, cnn, mlp):
+    """
+    Modello combinato: CNN (immagine) + MLP (immagine+feature).
+    """
+    def __init__(self, cnn: nn.Module, mlp: nn.Module):
         super(CombinedModel, self).__init__()
         self.cnn = cnn
         self.mlp = mlp
 
-    def forward(self, image_input, additional_input):
-        # Extract features from CNN
+    def forward(self, image_input: torch.Tensor, additional_input: torch.Tensor) -> torch.Tensor:
         cnn_features = self.cnn(image_input)
-        
-        # Concatenate CNN features and additional features
         combined_features = torch.cat((cnn_features, additional_input), dim=1)
-        
-        # Pass combined features through MLP
         output = self.mlp(combined_features)
         return output
 
-# Define a transform for resizing and normalizing images
+
+# ----------------------------------------------------------------------
+# Transforms per le immagini
+# ----------------------------------------------------------------------
 composer = transforms.Compose([
     transforms.Resize((250, 250)),
-    transforms.Grayscale(num_output_channels=3),  # Convert grayscale to RGB
+    transforms.Grayscale(num_output_channels=3),  # converte 1 canale -> 3 canali per ResNet
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.456, 0.456, 0.456], std=[0.225, 0.225, 0.225])
+    transforms.Normalize(mean=[0.456, 0.456, 0.456],
+                         std=[0.225, 0.225, 0.225])
 ])
 
-# Reinitialize weights of the model (He initialization)
-def he_init(shape):
-    return np.random.randn(*shape) * np.sqrt(2 / shape[0])
 
-def reinit_weights(model, seed):
-    # Set the random seed
+# ----------------------------------------------------------------------
+# Inizializzazione pesi
+# ----------------------------------------------------------------------
+def he_init_weight(tensor: torch.Tensor) -> None:
+    """
+    Inizializzazione He (Kaiming) per pesi di layer fully connected.
+    Modifica il tensore in-place.
+    """
+    if tensor.ndimension() < 2:
+        raise ValueError("he_init_weight expects a weight tensor with at least 2 dimensions")
+    fan_in = tensor.size(1)
+    std = np.sqrt(2.0 / fan_in)
+    with torch.no_grad():
+        tensor.normal_(0.0, std)
+
+
+def reinit_weights(model: CombinedModel, seed: int) -> CombinedModel:
+    """
+    Reinizializza i pesi dell'ultimo layer della CNN e di tutti i layer lineari dell'MLP.
+
+    Parameters
+    ----------
+    model : CombinedModel
+        Modello combinato CNN + MLP.
+    seed : int
+        Seed per la randomizzazione.
+
+    Returns
+    -------
+    CombinedModel
+        Il modello con pesi reinizializzati (in float32 su CPU di default).
+    """
+    torch.manual_seed(seed)
     np.random.seed(seed)
 
-    # Reinitialize weights of the last layer of CNN and MLP
+    # Reinit dell'ultimo layer lineare della CNN (es. new_fc_layer)
     layers = list(model.cnn.children())
-    last_n_layers = layers[-1:]
+    last_layer = layers[-1]
+    if isinstance(last_layer, nn.Linear):
+        he_init_weight(last_layer.weight)
+        if last_layer.bias is not None:
+            nn.init.zeros_(last_layer.bias)
 
-    for layer in last_n_layers:
-        if isinstance(layer, torch.nn.Linear):
-            layer.weight.data = torch.FloatTensor(he_init(layer.weight.size()))
-
-    for param in model.mlp.parameters():
-        param.data = torch.from_numpy(he_init(param.size()))
+    # Reinit dei layer lineari dell'MLP
+    for m in model.mlp.modules():
+        if isinstance(m, nn.Linear):
+            he_init_weight(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
 
     model = model.float()
 
-    # Save parameters
+    # Salva lo stato iniziale (opzionale, ma utile per riproducibilità)
     torch.save(model.state_dict(), 'init_model.pth')
     return model
 
-# Get predictions and calculate evaluation metrics
-def get_trials_prediction(model, test_dl, classes, encoder):
+
+# ----------------------------------------------------------------------
+# Predizioni su trials
+# ----------------------------------------------------------------------
+def get_trials_prediction(model: nn.Module,
+                          test_dl: DeviceDataLoader,
+                          classes,
+                          encoder) -> tuple:
+    """
+    Esegue la predizione sul dataloader di test e restituisce etichette,
+    predizioni, probabilità e feature aggiuntive.
+
+    Parameters
+    ----------
+    model : nn.Module
+        Modello addestrato.
+    test_dl : DeviceDataLoader
+        Dataloader dei batch di test (su device).
+    classes, encoder :
+        Parametri mantenuti per compatibilità con versioni precedenti (non usati).
+
+    Returns
+    -------
+    all_labels : np.ndarray
+    all_preds : np.ndarray
+    all_probs_t : np.ndarray
+    all_features : np.ndarray
+    """
+    model.eval()
     all_preds = []
     all_labels = []
     all_probs_t = []
     all_features = []
 
-    for batch in test_dl:
-        images = batch['image']
-        additional_features = batch['additional_features']
-        labels = batch['labels'].float().detach().cpu().numpy()
-        outputs = model(images, additional_features)
-        probs = torch.nn.functional.softmax(outputs, dim=1).detach().cpu()
-        preds = np.array([tensor.argmax().item() for tensor in probs])
-        all_preds.extend(preds)
-        all_labels.extend(labels)
-        all_probs_t.extend(np.array(probs))
-        all_features.extend(additional_features.detach().cpu().numpy())
+    with torch.no_grad():
+        for batch in test_dl:
+            images = batch['image']
+            additional_features = batch['additional_features']
+            labels = batch['labels'].detach().cpu().numpy()
 
-    # Convert lists to numpy arrays
+            outputs = model(images, additional_features)
+            probs = torch.nn.functional.softmax(outputs, dim=1).detach().cpu()
+
+            preds = probs.argmax(dim=1).numpy()
+
+            all_preds.extend(preds)
+            all_labels.extend(labels)
+            all_probs_t.extend(probs.numpy())
+            all_features.extend(additional_features.detach().cpu().numpy())
+
     all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
     all_probs_t = np.array(all_probs_t)
@@ -177,11 +287,33 @@ def get_trials_prediction(model, test_dl, classes, encoder):
 
     return all_labels, all_preds, all_probs_t, all_features
 
-# Normalize confusion matrix and plot
-def plot_confusion_matrix(cm, classes):
-    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]  # Normalize by rows
-    sns.heatmap(cm_normalized, annot=True, fmt=".2f", cmap='Blues', xticklabels=classes, yticklabels=classes)
-    plt.title('Confusion Matrix')
+
+# ----------------------------------------------------------------------
+# Confusion matrix
+# ----------------------------------------------------------------------
+def plot_confusion_matrix(cm: np.ndarray, classes: Sequence[str]) -> None:
+    """
+    Normalizza la confusion matrix per riga e la plottizza con seaborn.
+
+    Parameters
+    ----------
+    cm : np.ndarray
+        Confusion matrix (shape: [n_classes, n_classes]).
+    classes : Sequence[str]
+        Nomi delle classi (labels per assi).
+    """
+    cm = cm.astype('float')
+    row_sums = cm.sum(axis=1)[:, np.newaxis]
+    # evita divisione per zero
+    row_sums[row_sums == 0] = 1.0
+    cm_normalized = cm / row_sums
+
+    plt.figure()
+    sns.heatmap(cm_normalized, annot=True, fmt=".2f",
+                cmap='Blues', xticklabels=classes, yticklabels=classes)
+    plt.title('Normalized Confusion Matrix')
     plt.xlabel('Predicted')
     plt.ylabel('True')
+    plt.tight_layout()
     plt.show()
+
