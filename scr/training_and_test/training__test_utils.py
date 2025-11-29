@@ -1,7 +1,6 @@
-# src/training/training_utils.py
+# src/training_and_test/training__test_utils.py
 
-import os
-from typing import List, Sequence, Optional
+from typing import List, Sequence
 
 import numpy as np
 import torch
@@ -14,12 +13,12 @@ from PIL import Image
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# Set up the device for training (cuda if available)
+# Device globale (se ti serve altrove)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ----------------------------------------------------------------------
-# Dataset
+# Dataset: immagini + feature tabellari
 # ----------------------------------------------------------------------
 class CustomDataset(Dataset):
     """
@@ -30,7 +29,8 @@ class CustomDataset(Dataset):
     subjects : Sequence[str]
         Lista dei nomi (valori della colonna 'Name') da usare.
     features_dataframe : pd.DataFrame
-        DataFrame con almeno le colonne: 'Name', 'Class', 'Path' e le feature numeriche.
+        DataFrame con almeno le colonne: 'Name', 'Class', 'Path'
+        e le feature numeriche.
     transform : callable, optional
         Trasformazioni da applicare all'immagine (torchvision transforms).
     """
@@ -40,7 +40,7 @@ class CustomDataset(Dataset):
         self.df = features_dataframe.set_index('Name')
         self.transform = transform
 
-        # individua le colonne di feature (escludi Name, Class, Path)
+        # individua le colonne di feature (escludi Class e Path)
         self.feature_cols = [
             c for c in self.df.columns
             if c not in ['Class', 'Path']
@@ -53,20 +53,19 @@ class CustomDataset(Dataset):
         name = self.subjects[idx]
         row = self.df.loc[name]
 
-        # Load image
+        # immagine
         image_path = row['Path']
         image = Image.open(image_path).convert('L')  # grayscale, poi Grayscale(3) nel transform
 
-        # Additional features
+        # feature aggiuntive
         additional_features = torch.tensor(
             row[self.feature_cols].values.astype('float32'),
             dtype=torch.float32
         )
 
-        # Label
+        # label
         label = torch.tensor(int(row['Class']), dtype=torch.int64)
 
-        # Transform image
         if self.transform:
             image = self.transform(image)
 
@@ -99,26 +98,23 @@ class DeviceDataLoader:
 # ----------------------------------------------------------------------
 class ModifiedResNet18(nn.Module):
     """
-    ResNet18 pre-addestrata (o meno) con ultimo layer fully connected sostituito.
-    L'output di questa rete viene usato come feature dal modello combinato.
+    ResNet18 con ultimo layer fully connected sostituito.
+    `num_classes` qui significa dimensione dell'output (feature o logit).
     """
     def __init__(self, num_classes: int = 1000, pretrained: bool = True):
         super(ModifiedResNet18, self).__init__()
-        # Nota: per compatibilità con versioni più nuove di torchvision
-        # si potrebbe usare il parametro 'weights', ma qui manteniamo
-        # la firma classica.
         resnet = resnet18(pretrained=pretrained)
 
-        # Usa tutte le layer eccetto l'ultimo FC
+        # usa tutte le layer eccetto l'ultimo FC
         self.features = nn.Sequential(*list(resnet.children())[:-1])
 
-        # Nuovo fully connected finale
+        # nuovo fully connected finale
         self.new_fc_layer = nn.Linear(512, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.features(x)
         x = x.view(x.size(0), -1)   # (batch_size, 512)
-        x = self.new_fc_layer(x)    # (batch_size, num_classes) o feature_dim
+        x = self.new_fc_layer(x)    # (batch_size, num_classes)
         return x
 
 
@@ -130,11 +126,11 @@ class MLPModule(nn.Module):
         super(MLPModule, self).__init__()
         layers = []
 
-        # Primo layer
+        # primo layer
         layers.append(nn.Linear(input_size, num_neurons[0]))
         layers.append(nn.ReLU())
 
-        # Layer successivi
+        # layer successivi
         for i in range(1, num_layers):
             layers.append(nn.Linear(num_neurons[i - 1], num_neurons[i]))
             if i != num_layers - 1:
@@ -148,7 +144,10 @@ class MLPModule(nn.Module):
 
 class CombinedModel(nn.Module):
     """
-    Modello combinato: CNN (immagine) + MLP (immagine+feature).
+    Modello combinato: CNN (immagine) + MLP (immagine + feature).
+    - La CNN produce un vettore di feature per immagine.
+    - Viene concatenato alle feature tabellari.
+    - L'MLP produce logit (B, 1) per binario o (B, C) per multiclasse.
     """
     def __init__(self, cnn: nn.Module, mlp: nn.Module):
         super(CombinedModel, self).__init__()
@@ -163,7 +162,7 @@ class CombinedModel(nn.Module):
 
 
 # ----------------------------------------------------------------------
-# Transforms per le immagini
+# Transforms per immagini
 # ----------------------------------------------------------------------
 composer = transforms.Compose([
     transforms.Resize((250, 250)),
@@ -175,7 +174,7 @@ composer = transforms.Compose([
 
 
 # ----------------------------------------------------------------------
-# Inizializzazione pesi
+# Inizializzazione pesi (He / Kaiming)
 # ----------------------------------------------------------------------
 def he_init_weight(tensor: torch.Tensor) -> None:
     """
@@ -184,7 +183,7 @@ def he_init_weight(tensor: torch.Tensor) -> None:
     """
     if tensor.ndimension() < 2:
         raise ValueError("he_init_weight expects a weight tensor with at least 2 dimensions")
-    fan_in = tensor.size(1)
+    fan_in = tensor.size(1)  # per Linear: (out_features, in_features)
     std = np.sqrt(2.0 / fan_in)
     with torch.no_grad():
         tensor.normal_(0.0, std)
@@ -194,22 +193,13 @@ def reinit_weights(model: CombinedModel, seed: int) -> CombinedModel:
     """
     Reinizializza i pesi dell'ultimo layer della CNN e di tutti i layer lineari dell'MLP.
 
-    Parameters
-    ----------
-    model : CombinedModel
-        Modello combinato CNN + MLP.
-    seed : int
-        Seed per la randomizzazione.
-
-    Returns
-    -------
-    CombinedModel
-        Il modello con pesi reinizializzati (in float32 su CPU di default).
+    - per binario: ultimo layer MLP deve avere 1 neurone (1 logit, BCEWithLogitsLoss)
+    - per multiclasse: ultimo layer MLP deve avere C neuroni (C logit, CrossEntropyLoss)
     """
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    # Reinit dell'ultimo layer lineare della CNN (es. new_fc_layer)
+    # ultimo layer della CNN (es. new_fc_layer)
     layers = list(model.cnn.children())
     last_layer = layers[-1]
     if isinstance(last_layer, nn.Linear):
@@ -217,7 +207,7 @@ def reinit_weights(model: CombinedModel, seed: int) -> CombinedModel:
         if last_layer.bias is not None:
             nn.init.zeros_(last_layer.bias)
 
-    # Reinit dei layer lineari dell'MLP
+    # tutti i layer lineari dell'MLP
     for m in model.mlp.modules():
         if isinstance(m, nn.Linear):
             he_init_weight(m.weight)
@@ -226,37 +216,30 @@ def reinit_weights(model: CombinedModel, seed: int) -> CombinedModel:
 
     model = model.float()
 
-    # Salva lo stato iniziale (opzionale, ma utile per riproducibilità)
+    # opzionale ma utile per riproducibilità
     torch.save(model.state_dict(), 'init_model.pth')
     return model
 
 
 # ----------------------------------------------------------------------
-# Predizioni su trials
+# Predizioni (compatibile BCE binaria e CE multiclasse)
 # ----------------------------------------------------------------------
 def get_trials_prediction(model: nn.Module,
                           test_dl: DeviceDataLoader,
                           classes,
                           encoder) -> tuple:
     """
-    Esegue la predizione sul dataloader di test e restituisce etichette,
-    predizioni, probabilità e feature aggiuntive.
+    Esegue la predizione sul dataloader di test e restituisce:
+    - all_labels : np.ndarray shape (N,)
+    - all_preds  : np.ndarray shape (N,)
+    - all_probs  : np.ndarray shape (N, C) dove:
+        * C=2 per binario (probabilità [p(class0), p(class1)])
+        * C>2 per multiclasse (softmax)
+    - all_features : np.ndarray shape (N, n_features_tabellari)
 
-    Parameters
-    ----------
-    model : nn.Module
-        Modello addestrato.
-    test_dl : DeviceDataLoader
-        Dataloader dei batch di test (su device).
-    classes, encoder :
-        Parametri mantenuti per compatibilità con versioni precedenti (non usati).
-
-    Returns
-    -------
-    all_labels : np.ndarray
-    all_preds : np.ndarray
-    all_probs_t : np.ndarray
-    all_features : np.ndarray
+    Logica:
+    - se output del modello ha shape (B, 1)  -> assume BCE binaria
+    - se output del modello ha shape (B, C) con C>1 -> CE multiclasse
     """
     model.eval()
     all_preds = []
@@ -268,16 +251,38 @@ def get_trials_prediction(model: nn.Module,
         for batch in test_dl:
             images = batch['image']
             additional_features = batch['additional_features']
-            labels = batch['labels'].detach().cpu().numpy()
+            labels = batch['labels']
 
-            outputs = model(images, additional_features)
-            probs = torch.nn.functional.softmax(outputs, dim=1).detach().cpu()
+            outputs = model(images, additional_features)  # (B,1) o (B,C)
 
-            preds = probs.argmax(dim=1).numpy()
+            # assicuriamoci che sia 2D
+            if outputs.ndim == 1:
+                outputs = outputs.unsqueeze(1)
 
-            all_preds.extend(preds)
-            all_labels.extend(labels)
-            all_probs_t.extend(probs.numpy())
+            B, C = outputs.shape
+
+            if C == 1:
+                # ----- CASO BINARIO: BCEWithLogitsLoss -----
+                logits = outputs.squeeze(1)              # (B,)
+                probs_pos = torch.sigmoid(logits)        # (B,)
+
+                # costruiamo [p0, p1] = [1-p, p]
+                probs_two = torch.stack(
+                    [1.0 - probs_pos, probs_pos],
+                    dim=1
+                )                                        # (B,2)
+
+                preds = (probs_pos >= 0.5).long()        # (B,)
+                probs_np = probs_two.cpu().numpy()
+            else:
+                # ----- CASO MULTICLASSE: CrossEntropyLoss -----
+                probs_t = torch.nn.functional.softmax(outputs, dim=1)
+                probs_np = probs_t.cpu().numpy()         # (B,C)
+                preds = probs_t.argmax(dim=1)            # (B,)
+
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_probs_t.extend(probs_np)
             all_features.extend(additional_features.detach().cpu().numpy())
 
     all_preds = np.array(all_preds)
@@ -289,7 +294,7 @@ def get_trials_prediction(model: nn.Module,
 
 
 # ----------------------------------------------------------------------
-# Confusion matrix
+# Confusion matrix helper (opzionale)
 # ----------------------------------------------------------------------
 def plot_confusion_matrix(cm: np.ndarray, classes: Sequence[str]) -> None:
     """
@@ -304,7 +309,6 @@ def plot_confusion_matrix(cm: np.ndarray, classes: Sequence[str]) -> None:
     """
     cm = cm.astype('float')
     row_sums = cm.sum(axis=1)[:, np.newaxis]
-    # evita divisione per zero
     row_sums[row_sums == 0] = 1.0
     cm_normalized = cm / row_sums
 
