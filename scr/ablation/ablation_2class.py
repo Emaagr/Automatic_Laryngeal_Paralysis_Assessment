@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
-from training_utils import CustomDataset, DeviceDataLoader, ModifiedResNet18, MLPModule, CombinedModel
+from training_test_utils import CustomDataset, DeviceDataLoader, ModifiedResNet18, MLPModule, CombinedModel
 from ablation_utils import my_train, shapley_value, reinit_weights, select_additional_indices, he_init
 
 # Ablation-specific configurations
